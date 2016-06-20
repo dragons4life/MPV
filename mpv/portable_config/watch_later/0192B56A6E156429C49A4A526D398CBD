@@ -1,0 +1,4 @@
+start=1865.351667
+pause=yes
+volume-restore-data=wasapi:10.000008:10.000008:0
+ontop=no

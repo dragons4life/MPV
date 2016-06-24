@@ -1,0 +1,6 @@
+start=1445.027000
+speed=1.000260
+pause=yes
+volume-restore-data=wasapi:12.000000:12.000000:0
+audio-delay=-0.000000
+ontop=no

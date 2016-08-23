@@ -77,7 +77,7 @@ vec4 hook() {
     obw = mix(min(obw, o.rgb), obw, 1.0 - smoothstep(0.0, y, bw.x - (1.0 - y)));
 
     #ifdef Soft
-    o.xyz = mix(BlendSoftLight(o.xyz, obw), obw, 0.45);
+    o.xyz = mix(BlendOverlay(obw, o.xyz), obw, 0.45);
     #else
     o.xyz = mix(BlendLinearLight(obw, o.xyz), obw, 0.45);
     #endif

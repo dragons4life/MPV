@@ -19,6 +19,7 @@
 //!BIND LUMA
 //!SAVE DOWNSCALEDLUMAX
 //!HEIGHT LUMA.h
+//!WHEN CHROMA.w LUMA.w <
 //!COMPONENTS 4
 
 // -- Downscaling --
@@ -35,7 +36,6 @@
 #define taps (1.0 + factor)
 
 vec4 hook() {
-    //if (CHROMA_size.x >= LUMA_size.x) return vec4(0);
     // Calculate bounds
     float low  = floor((LUMA_pos - 0.5*taps*dxdy) * LUMA_size - offset + 0.5)[axis];
     float high = floor((LUMA_pos + 0.5*taps*dxdy) * LUMA_size - offset + 0.5)[axis];
@@ -44,8 +44,8 @@ vec4 hook() {
     vec2 avg = vec2(0);
     vec2 pos = LUMA_pos;
 
-    for (int k = 0; k < int(high - low); k++) {
-        pos[axis] = ddxddy[axis] * (float(k) + low + 0.5);
+    for (float k = 0.0; k < high - low; k++) {
+        pos[axis] = ddxddy[axis] * (k + low + 0.5);
         float rel = (pos[axis] - LUMA_pos[axis])*vec2(CHROMA_size.x, LUMA_size.y)[axis] + offset[axis]*factor;
         float w = Kernel(rel);
 
@@ -85,8 +85,8 @@ vec4 hook() {
     vec2 avg = vec2(0);
     vec2 pos = DOWNSCALEDLUMAX_pos;
 
-    for (int k = 0; k < int(high - low); k++) {
-        pos[axis] = ddxddy[axis] * (float(k) + low + 0.5);
+    for (float k = 0.0; k < high - low; k++) {
+        pos[axis] = ddxddy[axis] * (k + low + 0.5);
         float rel = (pos[axis] - DOWNSCALEDLUMAX_pos[axis])*CHROMA_size[axis] + offset[axis]*factor;
         float w = Kernel(rel);
 
@@ -101,6 +101,7 @@ vec4 hook() {
 //!HOOK NATIVE
 //!BIND HOOKED
 //!BIND LOWRES_YUV
+//!WHEN CHROMA.w LUMA.w <
 
 // -- CrossBilateral --
 
@@ -135,13 +136,12 @@ vec4 hook() {
 
 // -- Input processing --
 // Luma value
-#define GetLuma(x,y)   texture(LOWRES_YUV_raw, HOOKED_pos + dxdy*vec2(x,y))[0]
+//#define GetLuma(x,y)   LOWRES_YUV_tex(HOOKED_pos + dxdy*vec2(x,y))[0]
 // Chroma value
-#define GetChroma(x,y) texture(LOWRES_YUV_raw, ddxddy*(pos+vec2(x,y)+0.5))
+#define GetChroma(x,y) LOWRES_YUV_tex(ddxddy*(pos+vec2(x,y)+0.5))
 
 vec4 hook() {
     vec4 c0 = HOOKED_tex(HOOKED_pos);
-    if (LOWRES_YUV_size.x >= HOOKED_size.x) return c0;
 
     // Calculate position
     vec2 pos = HOOKED_pos * LOWRES_YUV_size - chromaOffset - vec2(0.5);

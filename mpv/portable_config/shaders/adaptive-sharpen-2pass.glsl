@@ -29,83 +29,39 @@
 //!BIND HOOKED
 //!COMPONENTS 4
 
-//#define Gamma(x)  ( mix(x * vec3(12.92), vec3(1.055) * pow(max(x, 0.0), vec3(1.0/2.4)) - vec3(0.055), step(vec3(0.0031308), x)) )
-#define Gamma(x) ( pow(clamp(x, 0.0, 1.0), vec3(1.0/2.0)) )
+//#define Gamma(x)    ( mix(x * vec3(12.92), vec3(1.055) * pow(max(x, 0.0), vec3(1.0/2.4)) - vec3(0.055), step(vec3(0.0031308), x)) )
+#define Gamma(x) ( pow(max(x, 0.0), vec3(1.0/2.0)) )
 
 vec4 hook() {
-    vec4 c = HOOKED_tex(HOOKED_pos);
-    c.rgb = Gamma(c.rgb);
-    return c;
+	vec4 c = HOOKED_tex(HOOKED_pos);
+	c.rgb = Gamma(c.rgb);
+	return c;
 }
 
 //!HOOK SCALED
 //!BIND HOOKED
 
-//--------------------------------------- Settings ------------------------------------------------
-
-#define curve_height    1.0                  // Main control of sharpening strength, [>0]
-                                             // 0.3 <-> 2.0 is a reasonable range of values
-#define antiring        0.0
-#define video_level_out false                // True to preserve BTB & WTW (minor summation error)
-                                             // Normally it should be set to false
-
-// Defined values under this row are "optimal" DO NOT CHANGE IF YOU DO NOT KNOW WHAT YOU ARE DOING!
-
-#define curveslope      (curve_height*0.7)   // Sharpening curve slope, high edge values
-#define L_overshoot     0.003                // Max light overshoot before max compression [>0.001]
-#define L_comp_ratio    0.169                // Light compression, default (0.169=~9x)
-#define D_overshoot     0.009                // Max dark overshoot before max compression [>0.001]
-#define D_comp_ratio    0.253                // Dark compression, default (0.253=~6x)
-#define max_scale_lim   0.1                  // Abs max change before compression (0.1=+-10%)
-#define pm_p            0.75                 // Power mean p-value [>0 - 1.0] (0.5=sqrt)
-//-------------------------------------------------------------------------------------------------
-
-// Saturation loss reduction
-#define minim_satloss  ( (c[0].rgb*max((c0_Y + sharpdiff)/c0_Y, 0.0) + (c[0].rgb + sharpdiff))/2.0 )
-
-// Soft limit
-#define soft_lim(v,s)  ( ((exp(2.0*min(abs(v), s*16.0)/s) - 1.0)/(exp(2.0*min(abs(v), s*16.0)/s) + 1.0))*s )
-
-// Weighted power mean
-#define wpmean(a,b,c)  ( pow((c*pow(abs(a), pm_p) + (1.0-c)*pow(b, pm_p)), (1.0/pm_p)) )
+//---------------------------------------------------------------------------------
+#define w_offset 2.0         // Edge channel offset, must be the same in all passes
+//---------------------------------------------------------------------------------
 
 // Get destination pixel values
-#define get(x,y)       ( HOOKED_texOff(vec2(x, y)*0.6).xyz )
-#define sat(input)     ( clamp((input).xyz, 0.0, 1.0) )
-
-// Colour to luma, fast approx gamma, avg of rec. 709 & 601 luma coeffs
-#define CtL(RGB)       ( dot(vec3(0.2558, 0.6511, 0.0931), GammaInv(RGB.rgb)) )
-
-// Center pixel diff
-#define mdiff(a,b,c,d,e,f,g) ( abs(luma[g]-luma[a]) + abs(luma[g]-luma[b])           \
-                             + abs(luma[g]-luma[c]) + abs(luma[g]-luma[d])           \
-                             + 0.5*(abs(luma[g]-luma[e]) + abs(luma[g]-luma[f])) )
+#define get(x, y) ( clamp(HOOKED_texOff(vec2(x, y)*0.6).rgb, 0.0, 1.0) )
 
 // Compute diff
 #define b_diff(z) ( abs(blur-c[z]) )
 
-#define min4(a,b,c,d) ( min(min(a,b), min(c,d)) )
-
-//#define GammaInv(x) ( mix(pow((x + vec3(0.055))/vec3(1.055), vec3(2.4)), x / vec3(12.92), step(x, vec3(0.04045))) )
-#define GammaInv(x) ( pow((x), vec3(2.0)) )
-
 vec4 hook() {
 
-    vec4 o = HOOKED_tex(HOOKED_pos);
-
-    // Get points, saturate colour data in c[0]
-    // [                c22               ]
-    // [           c24, c9,  c23          ]
-    // [      c21, c1,  c2,  c3, c18      ]
-    // [ c19, c10, c4,  c0,  c5, c11, c16 ]
-    // [      c20, c6,  c7,  c8, c17      ]
-    // [           c15, c12, c14          ]
-    // [                c13               ]
-    vec3 c[25] = vec3[](sat( o),    get(-1,-1), get( 0,-1), get( 1,-1), get(-1, 0),
+    // Get points and clip out of range values (BTB & WTW)
+    // [                c9                ]
+    // [           c1,  c2,  c3           ]
+    // [      c10, c4,  c0,  c5, c11      ]
+    // [           c6,  c7,  c8           ]
+    // [                c12               ]
+    vec3 c[13] = vec3[](get( 0, 0), get(-1,-1), get( 0,-1), get( 1,-1), get(-1, 0),
                         get( 1, 0), get(-1, 1), get( 0, 1), get( 1, 1), get( 0,-2),
-                        get(-2, 0), get( 2, 0), get( 0, 2), get( 0, 3), get( 1, 2),
-                        get(-1, 2), get( 3, 0), get( 2, 1), get( 2,-1), get(-3, 0),
-                        get(-2, 1), get(-2,-1), get( 0,-3), get( 1,-2), get(-1,-2));
+                        get(-2, 0), get( 2, 0), get( 0, 2));
 
     // Blur, gauss 3x3
     vec3  blur   = (vec3(2)*(c[2]+c[4]+c[5]+c[7]) + (c[1]+c[3]+c[6]+c[8]) + vec3(4)*c[0])/vec3(16);
@@ -123,7 +79,122 @@ vec4 hook() {
     // [         1/4         ]
     float edge = length( b_diff(0) + b_diff(1) + b_diff(2) + b_diff(3)
                        + b_diff(4) + b_diff(5) + b_diff(6) + b_diff(7) + b_diff(8)
-                       + 0.25*(b_diff(9) + b_diff(10) + b_diff(11) + b_diff(12)) ) * c_comp;
+                       + 0.25*(b_diff(9) + b_diff(10) + b_diff(11) + b_diff(12)) );
+
+    return vec4( (HOOKED_tex(HOOKED_pos).rgb), (edge*c_comp + w_offset) );
+}
+
+//!HOOK SCALED
+//!BIND HOOKED
+
+//--------------------------------------- Settings ------------------------------------------------
+
+#define curve_height    1.0                  // Main control of sharpening strength, [>0]
+                                             // 0.3 <-> 2.0 is a reasonable range of values
+
+#define video_level_out false                // True to preserve BTB & WTW (minor summation error)
+                                             // Normally it should be set to false
+
+//-------------------------------------------------------------------------------------------------
+// Defined values under this row are "optimal" DO NOT CHANGE IF YOU DO NOT KNOW WHAT YOU ARE DOING!
+
+#define curveslope      0.5                  // Sharpening curve slope, high edge values
+
+#define L_overshoot     0.003                // Max light overshoot before max compression [>0.001]
+#define L_compr_low     0.169                // Light compression, default (0.169=~9x)
+#define L_compr_high    0.337                // Light compression, surrounded by edges (0.337=~4x)
+
+#define D_overshoot     0.009                // Max dark overshoot before max compression [>0.001]
+#define D_compr_low     0.253                // Dark compression, default (0.253=~6x)
+#define D_compr_high    0.504                // Dark compression, surrounded by edges (0.504=~2.5x)
+
+#define max_scale_lim   0.1                  // Abs max change before compression (0.1=+-10%)
+
+#define dW_lothr        0.3                  // Start interpolating between W1 and W2
+#define dW_hithr        0.8                  // When dW is equal to W2
+
+#define lowthr_mxw      0.12                 // Edge value for max lowthr weight [>0.01]
+
+#define pm_p            0.75                 // Power mean p-value [>0 - 1.0] (0.5=sqrt)
+
+#define alpha_out       1.0                  // MPDN requires the alpha channel output to be 1
+
+//-------------------------------------------------------------------------------------------------
+#define w_offset        2.0                  // Edge channel offset, must be the same in all passes
+//-------------------------------------------------------------------------------------------------
+
+// Saturation loss reduction
+#define minim_satloss  ( (c[0].rgb*max((c0_Y + sharpdiff)/c0_Y, 0.0) + (c[0].rgb + sharpdiff))/2.0 )
+
+// Soft if, fast
+#define soft_if(a,b,c) ( saturate((a + b + c - 3.0*w_offset)/(saturate(maxedge) + 0.0067) - 0.85) )
+
+// Soft limit, modified tanh
+#define soft_lim(v,s)  ( ((exp(2.0*min(abs(v), s*16.0)/s) - 1.0)/(exp(2.0*min(abs(v), s*16.0)/s) + 1.0))*s )
+
+// Weighted power mean
+#define wpmean(a,b,c)  ( pow((c*pow(abs(a), pm_p) + (1.0-c)*pow(b, pm_p)), (1.0/pm_p)) )
+
+// Get destination pixel values
+#define get(x,y)       ( HOOKED_texOff(vec2(x, y)*0.6) )
+#define sat(input)     ( vec4(saturate((input).xyz), (input).w) )
+
+// Maximum of four values
+#define max4(a,b,c,d)  ( max(max(a,b), max(c,d)) )
+
+// Colour to luma, fast approx gamma, avg of rec. 709 & 601 luma coeffs
+#define CtL(RGB)       ( dot(vec3(0.2558, 0.6511, 0.0931), GammaInv(RGB.rgb)) )
+
+// Center pixel diff
+#define mdiff(a,b,c,d,e,f,g) ( abs(luma[g]-luma[a]) + abs(luma[g]-luma[b])           \
+                             + abs(luma[g]-luma[c]) + abs(luma[g]-luma[d])           \
+                             + 0.5*(abs(luma[g]-luma[e]) + abs(luma[g]-luma[f])) )
+
+#define saturate(x) clamp((x), 0.0, 1.0)
+
+//#define GammaInv(x) ( mix(pow((x + vec3(0.055))/vec3(1.055), vec3(2.4)), x / vec3(12.92), step(x, vec3(0.04045))) )
+#define GammaInv(x) ( pow((x), vec3(2.0)) )
+
+vec4 hook() {
+
+    vec4 orig = HOOKED_tex(HOOKED_pos);
+    float c_edge = orig.w - w_offset;
+
+    // Displays a green screen if the edge data is not inside a valid range in the .w channel
+    //if (c_edge > 24.0 || c_edge < -0.5) { return vec4(0, 1, 0, alpha_out); }
+
+    // Get points, clip out of range colour data in c[0]
+    // [                c22               ]
+    // [           c24, c9,  c23          ]
+    // [      c21, c1,  c2,  c3, c18      ]
+    // [ c19, c10, c4,  c0,  c5, c11, c16 ]
+    // [      c20, c6,  c7,  c8, c17      ]
+    // [           c15, c12, c14          ]
+    // [                c13               ]
+    vec4 c[25] = vec4[](sat( orig), get(-1,-1), get( 0,-1), get( 1,-1), get(-1, 0),
+                        get( 1, 0), get(-1, 1), get( 0, 1), get( 1, 1), get( 0,-2),
+                        get(-2, 0), get( 2, 0), get( 0, 2), get( 0, 3), get( 1, 2),
+                        get(-1, 2), get( 3, 0), get( 2, 1), get( 2,-1), get(-3, 0),
+                        get(-2, 1), get(-2,-1), get( 0,-3), get( 1,-2), get(-1,-2));
+
+    // Allow for higher overshoot if the current edge pixel is surrounded by similar edge pixels
+    float maxedge = max4( max4(c[1].w,c[2].w,c[3].w,c[4].w), max4(c[5].w,c[6].w,c[7].w,c[8].w),
+                          max4(c[9].w,c[10].w,c[11].w,c[12].w), c[0].w ) - w_offset;
+
+    // [          x          ]
+    // [       z, x, w       ]
+    // [    z, z, x, w, w    ]
+    // [ y, y, y, 0, y, y, y ]
+    // [    w, w, x, z, z    ]
+    // [       w, x, z       ]
+    // [          x          ]
+    float sbe = soft_if(c[2].w,c[9].w,c[22].w) *soft_if(c[7].w,c[12].w,c[13].w)  // x dir
+              + soft_if(c[4].w,c[10].w,c[19].w)*soft_if(c[5].w,c[11].w,c[16].w)  // y dir
+              + soft_if(c[1].w,c[24].w,c[21].w)*soft_if(c[8].w,c[14].w,c[17].w)  // z dir
+              + soft_if(c[3].w,c[23].w,c[18].w)*soft_if(c[6].w,c[20].w,c[15].w); // w dir
+
+    float s[2] = float[]( mix( L_compr_low, L_compr_high, saturate(smoothstep(2.0, 3.1, sbe)) ),
+                          mix( D_compr_low, D_compr_high, saturate(smoothstep(2.0, 3.1, sbe)) ) );
 
     // RGB to luma
     float c0_Y = CtL(c[0]);
@@ -138,7 +209,7 @@ vec4 hook() {
     const vec3 w2 = vec3(0.86602540378, 1.0, 0.5477225575);  // 0.75, 1.0, 0.3
 
     // Transition to a concave kernel if the center edge val is above thr
-    vec3 dW = pow(mix( w1, w2, smoothstep( 0.3, 0.8, edge)), vec3(2.0));
+    vec3 dW = pow(mix( w1, w2, smoothstep(dW_lothr, dW_hithr, c_edge)), vec3(2.0));
 
     float mdiff_c0  = 0.02 + 3.0*( abs(luma[0]-luma[2]) + abs(luma[0]-luma[4])
                                  + abs(luma[0]-luma[5]) + abs(luma[0]-luma[7])
@@ -164,24 +235,28 @@ vec4 hook() {
     weights[5] = (max(max((weights[9]  + weights[11])/4.0, weights[5]), 0.25) + weights[5])/2.0;
     weights[7] = (max(max((weights[10] + weights[11])/4.0, weights[7]), 0.25) + weights[7])/2.0;
 
-    // Calculate the negative part of the laplace kernel
+    // Calculate the negative part of the laplace kernel	
+    float lowthrsum   = 0.0;
     float weightsum   = 0.0;
     float neg_laplace = 0.0;
 
     for (int pix = 0; pix < 12; ++pix)
     {
-        neg_laplace  += luma[pix+1]*weights[pix];
-        weightsum    += weights[pix];
+        float x       = saturate((c[pix+1].w - w_offset - 0.01)/(lowthr_mxw - 0.01));
+        float lowthr  = x*x*(2.97 - 1.98*x) + 0.01;
+
+        neg_laplace  += luma[pix+1]*(weights[pix]*lowthr);
+        weightsum    += weights[pix]*lowthr;
+        lowthrsum    += lowthr/12.0;
     }
 
     neg_laplace = abs(neg_laplace/weightsum);
 
     // Compute sharpening magnitude function
-    float sharpen_val = (curve_height/(curveslope*pow((edge), 3.5) + 0.5))
-                      - (curve_height/(8192.0*pow((edge*2.4), 4.5) + 0.5));
+    float sharpen_val = (curve_height/(curve_height*curveslope*pow(abs(c_edge), 3.5) + 0.5));
 
     // Calculate sharpening diff and scale
-    float sharpdiff = (c0_Y - neg_laplace)*(sharpen_val*0.8 + 0.01);
+    float sharpdiff = (c0_Y - neg_laplace)*(lowthrsum*sharpen_val*0.8 + 0.01);
 
     // Calculate local near min & max, partial sort
     float temp;
@@ -239,7 +314,7 @@ vec4 hook() {
         luma[24-2] = max(luma[24-2], luma[i2-1]);
         luma[i2-1] = min(temp, luma[i2-1]);
     }
-    
+
     float nmax = (max(luma[22] + luma[23]*2.0, c0_Y*3.0) + luma[24])/4.0;
     float nmin = (min(luma[2]  + luma[1]*2.0,  c0_Y*3.0) + luma[0])/4.0;
 
@@ -248,19 +323,15 @@ vec4 hook() {
     float nmin_scale = min((abs(c0_Y - nmin) + D_overshoot), max_scale_lim);
 
     // Soft limited antiringing with tanh, wpmean to control maximum compression slope
-    sharpdiff = wpmean(max(sharpdiff, 0.0), soft_lim(max(sharpdiff, 0.0), nmax_scale ), L_comp_ratio )
-              - wpmean(min(sharpdiff, 0.0), soft_lim(min(sharpdiff, 0.0), nmin_scale ), D_comp_ratio );
+    sharpdiff = wpmean(max(sharpdiff, 0.0), soft_lim(max(sharpdiff, 0.0), nmax_scale ), s[0] )
+              - wpmean(min(sharpdiff, 0.0), soft_lim(min(sharpdiff, 0.0), nmin_scale ), s[1] );
 
     if (video_level_out){
-        o.rgb = mix(o.rgb + (minim_satloss - c[0].rgb), (o.rgb + sharpdiff), step(sharpdiff, 0.0));
+        return vec4(GammaInv(mix(orig.rgb + (minim_satloss - c[0].rgb), (orig.rgb + sharpdiff), step(sharpdiff, 0.0))), alpha_out);
     }
 
     else // Normal path
     {
-        o.rgb = mix(minim_satloss, (c[0].rgb + sharpdiff), step(sharpdiff, 0.0));
+        return vec4(GammaInv(mix(minim_satloss, (c[0].rgb + sharpdiff), step(sharpdiff, 0.0))), alpha_out);
     }
-
-    vec3 low = min4(c[0].rgb,c[2].rgb,c[3].rgb,c[5].rgb);
-    o.rgb = GammaInv(mix(o.rgb, max(o.rgb, low), antiring));
-    return o;
 }

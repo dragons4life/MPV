@@ -17,22 +17,22 @@
 //!BIND HOOKED
 //!BIND PREKERNEL
 //!SAVE DOWNSCALEDX
-//!WIDTH PREKERNEL.w
+//!WIDTH POSTKERNEL.w POSTKERNEL.h / PREKERNEL.h *
 //!WHEN PREKERNEL.w POSTKERNEL.w <
 //!COMPONENTS 4
 
 // -- Downscaling --
-#define dxdy   (vec2(PREKERNEL_pt.x, POSTKERNEL_pt.y))
-#define ddxddy (POSTKERNEL_pt)
+#define dxdy        (vec2(PREKERNEL_pt.x, POSTKERNEL_pt.y))
+#define ddxddy      (POSTKERNEL_pt)
 
-#define factor ((ddxddy*vec2(PREKERNEL_size.x, POSTKERNEL_size.y))[axis])
+#define factor      ((ddxddy*vec2(PREKERNEL_size.x, POSTKERNEL_size.y))[axis])
 
 #define axis 0
 
-#define offset vec2(0,0)
+#define offset      vec2(0,0)
 
-#define Kernel(x) clamp(0.5 + (0.5 - abs(x)) / factor, 0.0, 1.0)
-#define taps (1.0 + factor)
+#define Kernel(x)   clamp(0.5 + (0.5 - abs(x)) / factor, 0.0, 1.0)
+#define taps        (1.0 + factor)
 
 #define Kb 0.0722
 #define Kr 0.2126
@@ -65,22 +65,23 @@ vec4 hook() {
 //!BIND DOWNSCALEDX
 //!BIND PREKERNEL
 //!SAVE LOWRES
-//!WIDTH PREKERNEL.w
+//!WIDTH POSTKERNEL.w POSTKERNEL.h / PREKERNEL.h *
 //!HEIGHT PREKERNEL.h
+//!WHEN PREKERNEL.w POSTKERNEL.w <
 //!COMPONENTS 4
 
 // -- Downscaling --
-#define dxdy   (PREKERNEL_pt)
-#define ddxddy (DOWNSCALEDX_pt)
+#define dxdy        (PREKERNEL_pt)
+#define ddxddy      (DOWNSCALEDX_pt)
 
-#define factor ((ddxddy*PREKERNEL_size)[axis])
+#define factor      ((ddxddy*PREKERNEL_size)[axis])
 
 #define axis 1
 
-#define offset vec2(0,0)
+#define offset      vec2(0,0)
 
-#define Kernel(x) clamp(0.5 + (0.5 - abs(x)) / factor, 0.0, 1.0)
-#define taps (1.0 + factor)
+#define Kernel(x)   clamp(0.5 + (0.5 - abs(x)) / factor, 0.0, 1.0)
+#define taps        (1.0 + factor)
 
 #define Kb 0.0722
 #define Kr 0.2126
@@ -109,20 +110,20 @@ vec4 hook() {
 }
 
 //!HOOK POSTKERNEL
-//!BIND HOOKED
 //!BIND PREKERNEL
 //!BIND LOWRES
 //!SAVE R
+//!WIDTH POSTKERNEL.w POSTKERNEL.h / PREKERNEL.h *
+//!HEIGHT PREKERNEL.h
 //!WHEN PREKERNEL.h POSTKERNEL.h <
 //!COMPONENTS 4
 
-#define oversharp   0.0
 #define locality    4.0
 #define spread      1.0 / locality
 
 #define sqr(x)      pow(x,2.0)
-#define GetH(x,y)   LOWRES_texOff(vec2(x,y))
-#define GetL(x,y)   PREKERNEL_texOff(vec2(x,y))
+#define GetH(x,y)   LOWRES_texOff(vec2(x,y)).xyz
+#define GetL(x,y)   PREKERNEL_tex(PREKERNEL_pt*(LOWRES_pos * LOWRES_size + floor((PREKERNEL_size - LOWRES_size) / 2.0) + vec2(x,y))).xyz
 
 #define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
 #define Kb 0.0722
@@ -130,21 +131,19 @@ vec4 hook() {
 #define Luma(rgb)   ( dot(vec3(Kr, 1.0 - Kr - Kb, Kb), rgb) )
 
 vec4 hook() {
-    vec4 c0 = LOWRES_tex(LOWRES_pos);
+    vec3 c0 = LOWRES_tex(LOWRES_pos).xyz;
 
-    vec4 meanH = (GetH(0,0) + spread * (GetH(-1, 0) + GetH(0, 1) + GetH(1, 0) + GetH(0, -1)))/(1.0 + 4.0 * spread);
-    vec4 meanL = (GetL(0,0) + spread * (GetL(-1, 0) + GetL(0, 1) + GetL(1, 0) + GetL(0, -1)))/(1.0 + 4.0 * spread);
+    vec3 meanH = (GetH(0, 0) + spread * (GetH(-1, 0) + GetH(0, 1) + GetH(1, 0) + GetH(0, -1)))/(1.0 + 4.0 * spread);
+    vec3 meanL = (GetL(0, 0) + spread * (GetL(-1, 0) + GetL(0, 1) + GetL(1, 0) + GetL(0, -1)))/(1.0 + 4.0 * spread);
 
-    float varH = (sqr(Luma(GetH(0, 0).xyz - meanH.xyz)) + spread * (sqr(Luma(GetH(-1, 0).xyz - meanH.xyz)) + sqr(Luma(GetH(0, 1).xyz - meanH.xyz)) + sqr(Luma(GetH(1, 0).xyz - meanH.xyz)) + sqr(Luma(GetH(0, -1).xyz - meanH.xyz)))) / (1.0 + 4.0 * spread);
-    float varL = (sqr(Luma(GetL(0, 0).xyz - meanL.xyz)) + spread * (sqr(Luma(GetL(-1, 0).xyz - meanL.xyz)) + sqr(Luma(GetL(0, 1).xyz - meanL.xyz)) + sqr(Luma(GetL(1, 0).xyz - meanL.xyz)) + sqr(Luma(GetL(0, -1).xyz - meanL.xyz)))) / (1.0 + 4.0 * spread);
+    float varH = (sqr(Luma(GetH(0, 0) - meanH)) + spread * (sqr(Luma(GetH(-1, 0) - meanH)) + sqr(Luma(GetH(0, 1) - meanH)) + sqr(Luma(GetH(1, 0) - meanH)) + sqr(Luma(GetH(0, -1) - meanH)))) / (1.0 + 4.0 * spread);
+    float varL = (sqr(Luma(GetL(0, 0) - meanL)) + spread * (sqr(Luma(GetL(-1, 0) - meanL)) + sqr(Luma(GetL(0, 1) - meanL)) + sqr(Luma(GetL(1, 0) - meanL)) + sqr(Luma(GetL(0, -1) - meanL)))) / (1.0 + 4.0 * spread);
 
-    varH = varH + meanH.w + sqr(0.5/255.0);
+    varH = varH + sqr(0.5/255.0);
     varL = varL + sqr(0.5/255.0);
 
-    float R = (1.0 + oversharp) * sqrt(varL/varH);
-
-    //return vec4(Gamma(meanH.rgb), R);
-    return vec4(Gamma(c0.rgb), R);
+    //return vec4(Gamma(meanH), sqrt(varL/varH));    //Sharp
+    return vec4(Gamma(c0), sqrt(varL/varH));    //Soft
 }
 
 //!HOOK POSTKERNEL
@@ -156,28 +155,27 @@ vec4 hook() {
 
 // SuperRes final pass
 
-#define dxdy (HOOKED_pt)
-#define ddxddy (LOWRES_pt)
+#define oversharp   0.3
 
 // -- Window Size --
-#define taps 4.0
-#define even (taps - 2.0 * floor(taps / 2.0) == 0.0)
-#define minX int(1.0-ceil(taps/2.0))
-#define maxX int(floor(taps/2.0))
+#define taps        4.0
+#define even        (taps - 2.0 * floor(taps / 2.0) == 0.0)
+#define minX        int(1.0-ceil(taps/2.0))
+#define maxX        int(floor(taps/2.0))
 
-#define factor (ddxddy*HOOKED_size)
-#define Kernel(x) (cos(acos(-1.0)*(x)/taps)) // Hann kernel
+#define factor      (LOWRES_pt*HOOKED_size)
+#define Kernel(x)   (cos(acos(-1.0)*(x)/taps)) // Hann kernel
 
 // -- Convenience --
-#define sqr(x) dot(x,x)
+#define sqr(x)      dot(x,x)
 
 // -- Input processing --
 //Current high res value
-#define Get(x,y)    ( HOOKED_texOff(sqrt(ddxddy*HOOKED_size)*vec2(x,y)).xyz )
-#define GetOriginal(x,y)   ( PREKERNEL_tex(ddxddy*(pos+vec2(x,y)+0.5)) )
-#define GetR(x,y)   ( R_tex(ddxddy*(pos+vec2(x,y)+0.5)) )
+#define Get(x,y)    ( HOOKED_texOff(sqrt(LOWRES_pt*HOOKED_size)*vec2(x,y)).xyz )
+#define Orig(x,y)   ( PREKERNEL_tex(PREKERNEL_pt*(pos2+vec2(x,y)+0.5)) )
+#define GetR(x,y)   ( R_tex(R_pt*(pos+vec2(x,y)+0.5)) )
 //Downsampled result
-#define Lowres(x,y) ( LOWRES_tex(ddxddy*(pos+vec2(x,y)+0.5)) )
+#define Lowres(x,y) ( LOWRES_tex(LOWRES_pt*(pos+vec2(x,y)+0.5)) )
 
 #define Gamma(x)    ( pow(max(x, 0.0), vec3(1.0/2.0)) )
 #define GammaInv(x) ( pow((x), vec3(2.0)) )
@@ -193,6 +191,8 @@ vec4 hook() {
     vec2 offset = pos - (even ? floor(pos) : round(pos));
     pos -= offset;
 
+    vec2 pos2 = pos + floor((PREKERNEL_size - LOWRES_size) / 2.0);
+
     // Calculate faithfulness force
     float weightSum = 0.0;
     vec3 diff = vec3(0);
@@ -200,13 +200,13 @@ vec4 hook() {
     for (int X = minX; X <= maxX; X++)
     for (int Y = minX; Y <= maxX; Y++)
     {
-        float R = GetR(X,Y).w;
+        float R = (1.0 + oversharp) * GetR(X,Y).w;
         float Var = Lowres(X,Y).w;
 
         vec2 krnl = Kernel(vec2(X,Y) - offset);
         float weight = krnl.x * krnl.y / (sqr(Luma(c0.xyz - Lowres(X,Y).xyz)) + Var + sqr(0.5/255.0));
 
-        diff += weight * ((Gamma(GetOriginal(X,Y).xyz) - GetR(X,Y).xyz * R) - (1.0 - R) * Gamma(c0.xyz));
+        diff += weight * ((Gamma(Orig(X,Y).xyz) - GetR(X,Y).xyz * R) - (1.0 - R) * Gamma(c0.xyz));
         weightSum += weight;
     }
     diff /= weightSum;

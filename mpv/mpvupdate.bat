@@ -1,2 +1,2 @@
 cd %~dp0
-powershell updater.ps1
+powershell -noexit -executionpolicy bypass -File updater.ps1

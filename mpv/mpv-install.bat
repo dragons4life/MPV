@@ -1,22 +1,4 @@
 @echo off
-cls
-echo https://github.com/rossy/mpv-install
-echo Files: mpv-install.bat, mpv.uninstall.bat, mpv-document.ico
-echo.
-echo Copyright 2015 James Ross-Gowan (rossymiles@gmail.com)
-echo Permission to use, copy, modify, and/or distribute this software for any
-echo purpose with or without fee is hereby granted, provided that the above
-echo copyright notice and this permission notice appear in all copies.
-echo.
-echo THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-echo REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-echo FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-echo INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-echo LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-echo OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-echo PERFORMANCE OF THIS SOFTWARE.
-echo.
-
 setlocal enableextensions enabledelayedexpansion
 path %SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem
 
@@ -34,11 +16,12 @@ call :ensure_admin
 set mpv_args=
 
 :: Get mpv.exe location
-set mpv_path=%~dp0mpv.exe
+cd /D %~dp0\..
+set mpv_path=%cd%\mpv.exe
 if not exist "%mpv_path%" call :die "mpv.exe not found"
 
 :: Get mpv-document.ico location
-set icon_path=%~dp0mpv-document.ico
+set icon_path=%~dp0mpv-icon.ico
 if not exist "%icon_path%" call :die "mpv-document.ico not found"
 
 :: Register mpv.exe under the "App Paths" key, so it can be found by

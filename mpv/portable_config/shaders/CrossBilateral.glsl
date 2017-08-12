@@ -98,10 +98,12 @@ vec4 hook() {
     return vec4(avg[0], texture(CHROMA_raw, CHROMA_pos).xy, avg[1]-avg[0]*avg[0]);
 }
 
-//!HOOK NATIVE
+//!HOOK CHROMA
 //!BIND HOOKED
+//!BIND LUMA
 //!BIND LOWRES_YUV
-//!WHEN CHROMA.w LUMA.w <
+//!WIDTH LUMA.w
+//!HEIGHT LUMA.h
 
 // -- CrossBilateral --
 
@@ -110,102 +112,83 @@ vec4 hook() {
 
 // -- Convenience --
 #define sqr(x) dot(x,x)
-#define noise  0.05
+#define noise  0.1
 #define bitnoise 1.0/(2.0*255.0)
-
-#define dxdy   (NATIVE_pt)
-#define ddxddy (LOWRES_YUV_pt)
+#define radius 1.0
 #define chromaOffset vec2(0.0, 0.0)
-#define radius 0.5
 
 // -- Window Size --
-#define taps 4.0
-#define even (taps - 2.0 * floor(taps / 2.0) == 0.0)
-#define minX int(1.0-ceil(taps/2.0))
-#define maxX int(floor(taps/2.0))
-
-#define factor (dxdy/ddxddy)
-// #define Kernel(x) saturate(0.5 + (0.5 - abs(x)) * 2)
-#define pi acos(-1.0)
-#define Kernel(x) (cos(pi*(x)/taps)) // Hann kernel
-
-#define sinc(x) sin(pi*(x))/(x)
-#define BCWeights(B,C,x) (mix(vec2(0.0), mix((((-B/6.0-C)*x + (B+5.0*C))*x + (-2.0*B-8.0*C))*x+vec2((4.0/3.0)*B+4.0*C), ((2.0-1.5*B-C)*x + (-3.0+2.0*B+C))*x*x + vec2(1.0-B/3.0), step(x, vec2(1.0))), step(x, vec2(2.0))))
-#define IntKernel(x) (BCWeights(1.0/3.0, 1.0/3.0, abs(x)))
-// #define IntKernel(x) (cos(0.5*pi*saturate(abs(x))))
+#define taps 3
+#define even (float(taps) - 2.0 * floor(float(taps) / 2.0) == 0.0)
+#define minX int(1.0-ceil(float(taps)/2.0))
+#define maxX int(floor(float(taps)/2.0))
 
 // -- Input processing --
 // Luma value
-//#define GetLuma(x,y)   LOWRES_YUV_tex(HOOKED_pos + dxdy*vec2(x,y))[0]
+//#define GetLuma(x,y)   LOWRES_YUV_tex(HOOKED_pos + NATIVE_pt*vec2(x,y))[0]
 // Chroma value
-#define GetChroma(x,y) LOWRES_YUV_tex(ddxddy*(pos+vec2(x,y)+0.5))
+#define GetChroma(x,y) LOWRES_YUV_tex(LOWRES_YUV_pt*(pos+vec2(x,y)+vec2(0.5)))
+
+#define localVar 0.0//sqr(bitnoise)
+#define fixLuma 0.0
+
+#define C(i,j) (inversesqrt(sqr(noise) + X[i].w + X[j].w) * exp(-0.5*(sqr(X[i].x - X[j].x)/(sqr(noise) + X[i].w + X[j].w) + sqr((coords[i] - coords[j])/radius))) + fixLuma * (X[i].x - y) * (X[j].x - y))
+#define c(i) (inversesqrt(sqr(noise) + X[i].w + localVar) * exp(-0.5*(sqr(X[i].x - y)/(sqr(noise) + X[i].w + localVar) + sqr((coords[i] - offset)/radius))))
+
+#define N (taps*taps - 1)
+
+#define f1(i) {b[i] = c(i) - c(N) - C(i,N) + C(N,N); \
+        for (int j=i; j<N; j++) M[(i)*N + j] = C(i,j) - C(i,N) - C(j,N) + C(N,N);}
+
+#define f2(i) for (int j=i+1; j<N; j++) {b[j] -= b[i] * M[(i)*N + j] / M[(i)*N + (i)]; \
+        for (int k=j; k<N; k++) M[j*N + k] -= M[(i)*N + k] * M[(i)*N + j] / M[(i)*N + (i)];}
+
+#define I2(f, n) f(n) f(n+1)
+#define I4(f, n) I2(f, n) I2(f, n+2)
+#define I8(f, n) I4(f, n) I4(f, n+4)
 
 vec4 hook() {
-    vec4 c0 = HOOKED_tex(HOOKED_pos);
+    float y = LUMA_tex(LUMA_pos).x;
 
     // Calculate position
-    vec2 pos = HOOKED_pos * LOWRES_YUV_size - chromaOffset - vec2(0.5);
+    vec2 pos = LUMA_pos * LOWRES_YUV_size - chromaOffset - vec2(0.5);
     vec2 offset = pos - (even ? floor(pos) : round(pos));
     pos -= offset;
 
-    float localVar = sqr(noise);
+    vec2 coords[N+1];
+    vec4 X[N+1];
+    int i=0;
+    for (int xx = minX; xx <= maxX; xx++)
+    for (int yy = minX; yy <= maxX; yy++) 
+        if (!(xx == 0 && yy == 0)) {
+            coords[i] = vec2(xx,yy);
+            X[i++] = GetChroma(xx, yy);
+        }
 
-    // Bilateral weighted interpolation
-    vec4 fitAvg = vec4(0);
-    vec4 fitVar = vec4(0);
-    vec4 fitCov = vec4(0);
-    vec4 intAvg = vec4(0);
-    vec4 intVar = vec4(0);
-    for (int X = minX; X <= maxX; X++)
-    for (int Y = minX; Y <= maxX; Y++)
-    {
-        float dI2 = sqr(GetChroma(X,Y).x - c0.x);
-        float var = GetChroma(X,Y).w + sqr(bitnoise);
-        float dXY2 = sqr((vec2(X,Y) - offset)/radius);
+    coords[N] = vec2(0,0);
+    X[N] = GetChroma(0,0);
 
-        vec2 kernel = Kernel(vec2(X,Y) - offset);
-        float weight = - kernel.x * kernel.y * log(dI2 + var + localVar);
+    float M[N*N];
+    float b[N];
 
-        fitAvg += weight*vec4(GetChroma(X,Y).xyz, 1.0);
-        fitVar += weight*vec4((vec4(var, sqr(bitnoise), sqr(bitnoise), 0.0) + GetChroma(X,Y)*GetChroma(X,Y)).xyz, weight);
-        fitCov += weight*vec4(GetChroma(X,Y).x*GetChroma(X,Y).yz, var, 0.0);
+    I8(f1, 0)
 
-        kernel = IntKernel(vec2(X,Y) - offset);
-        weight = kernel.x * kernel.y;
-        intAvg += weight*vec4(GetChroma(X,Y).xyz, 1.0);
-        intVar += weight*vec4((vec4(var, sqr(bitnoise), sqr(bitnoise), 0.0) + GetChroma(X,Y)*GetChroma(X,Y)).xyz, weight);
-    }    
-    float weightSum = fitAvg.w;
-    float weightSqrSum = fitVar.w;
+    I8(f2, 0)
 
-    // Linear fit
-    fitAvg /= vec4(weightSum);
-    vec3 Var = (fitVar / weightSum).xyz - fitAvg.xyz*fitAvg.xyz;
-    vec2 Cov = (fitCov / weightSum).xy - fitAvg.x*fitAvg.yz;
+    //float w[N];
+    //float det = 1;
+    //float Tr = 0;
+    vec4 interp = X[N];
+    for (i=N-1; i>=0; i--) {
+        //w[i] = b[i];
+        for (int j=i+1; j<N; j++) {
+            b[i] -= M[i*N + j] * b[j];
+        }
+        b[i] /= M[i*N + i];
+        interp += b[i] * (X[i] - X[N]);
+        //det *= M[i*N + i];
+        //Tr += M[i*N + i];
+    }
 
-    // Interpolation
-    float intWeightSum = intAvg.w;
-    float intWeightSqrSum = intVar.w;
-    intAvg /= vec4(intWeightSum);
-    intVar = (intVar / vec4(intWeightSum)) - intAvg*intAvg;
-
-    // Estimate error
-
-    // Coefficient of determination
-    vec2 R2 = clamp((Cov * Cov) / (Var.x * Var.yz), 0.0, 1.0);
-    // Error of fit
-    vec2 errFit = (vec2(1.0)-R2) * vec2((weightSqrSum / sqr(weightSum) + sqr(c0.x - fitAvg.x) / Var.x) / (1.0 - weightSqrSum / sqr(weightSum)));
-    // Error of interpolation
-    vec2 errInt = mix((intVar.yz / Var.yz) * vec2(intWeightSqrSum / sqr(intWeightSum)), vec2(sqr(c0.x - intAvg.x) + intVar.x) / Var.x, R2);
-
-    // Balance error of interpolation with error of fit.
-    vec2 strength = clamp(power * errInt / mix(errFit, errInt, power), 0.0, 1.0);
-
-    // Debugging
-    // return vec4(dot(strength,vec2(0.5)), 0.5, 0.5, 1.0);
-
-    // Update c0
-    c0.yz = mix(intAvg.yz, fitAvg.yz + ((c0.x - fitAvg.x) * Cov / Var.x), strength);
-
-    return c0;
+    return interp.yzxx;
 }

@@ -22,7 +22,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 // THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// Adaptive sharpen - version 2016-07-10 - (requires ps >= 3.0)
+// Adaptive sharpen - version 2016-11-19 - (requires ps >= 3.0)
 // Tuned for use post resize
 
 //!HOOK SCALED
@@ -49,7 +49,7 @@ vec4 hook() {
 #define get(x, y) ( clamp(HOOKED_texOff(vec2(x, y)*0.6).rgb, 0.0, 1.0) )
 
 // Compute diff
-#define b_diff(z) ( abs(blur-c[z]) )
+#define b_diff(pix) ( abs(blur-c[pix]) )
 
 vec4 hook() {
 
@@ -68,18 +68,19 @@ vec4 hook() {
     float blur_Y = dot(blur, vec3(1.0/3.0));
 
     // Contrast compression, center = 0.5, scaled to 1/3
-    float c_comp = clamp(0.266666681f + 0.9*pow(2.0, (-7.4*blur_Y)), 0.0, 1.0);
+    float c_comp = clamp(0.266666681f + 0.9*exp2(-7.4*blur_Y), 0.0, 1.0);
 
     // Edge detection
-    // Matrix weights
-    // [         1/4,        ]
-    // [      1,  1,  1      ]
-    // [ 1/4, 1,  1,  1, 1/4 ]
-    // [      1,  1,  1      ]
-    // [         1/4         ]
-    float edge = length( b_diff(0) + b_diff(1) + b_diff(2) + b_diff(3)
-                       + b_diff(4) + b_diff(5) + b_diff(6) + b_diff(7) + b_diff(8)
-                       + 0.25*(b_diff(9) + b_diff(10) + b_diff(11) + b_diff(12)) );
+    // Relative matrix weights
+    // [          1,         ]
+    // [      4,  5,  4      ]
+    // [  1,  5,  6,  5,  1  ]
+    // [      4,  5,  4      ]
+    // [          1          ]
+    float edge = length( 1.38*b_diff(0)
+                       + 1.15*(b_diff(2) + b_diff(4) + b_diff(5) + b_diff(7))
+                       + 0.92*(b_diff(1) + b_diff(3) + b_diff(6) + b_diff(8))
+                       + 0.23*(b_diff(9) + b_diff(10) + b_diff(11) + b_diff(12)) );
 
     return vec4( (HOOKED_tex(HOOKED_pos).rgb), (edge*c_comp + w_offset) );
 }
@@ -89,7 +90,7 @@ vec4 hook() {
 
 //--------------------------------------- Settings ------------------------------------------------
 
-#define curve_height    1.0                  // Main control of sharpening strength, [>0]
+#define curve_height    0.8                  // Main control of sharpening strength [>0]
                                              // 0.3 <-> 2.0 is a reasonable range of values
 
 #define video_level_out false                // True to preserve BTB & WTW (minor summation error)
@@ -98,13 +99,13 @@ vec4 hook() {
 //-------------------------------------------------------------------------------------------------
 // Defined values under this row are "optimal" DO NOT CHANGE IF YOU DO NOT KNOW WHAT YOU ARE DOING!
 
-#define curveslope      0.5                  // Sharpening curve slope, high edge values
+#define curveslope      0.4                  // Sharpening curve slope, high edge values
 
-#define L_overshoot     0.003                // Max light overshoot before max compression [>0.001]
+#define L_overshoot     0.003                // Max light overshoot before compression [>0.001]
 #define L_compr_low     0.169                // Light compression, default (0.169=~9x)
 #define L_compr_high    0.337                // Light compression, surrounded by edges (0.337=~4x)
 
-#define D_overshoot     0.009                // Max dark overshoot before max compression [>0.001]
+#define D_overshoot     0.009                // Max dark overshoot before compression [>0.001]
 #define D_compr_low     0.253                // Dark compression, default (0.253=~6x)
 #define D_compr_high    0.504                // Dark compression, surrounded by edges (0.504=~2.5x)
 
@@ -113,9 +114,9 @@ vec4 hook() {
 #define dW_lothr        0.3                  // Start interpolating between W1 and W2
 #define dW_hithr        0.8                  // When dW is equal to W2
 
-#define lowthr_mxw      0.12                 // Edge value for max lowthr weight [>0.01]
+#define lowthr_mxw      0.11                 // Edge value for max lowthr weight [>0.01]
 
-#define pm_p            0.75                 // Power mean p-value [>0 - 1.0] (0.5=sqrt)
+#define pm_p            0.75                 // Power mean p-value [>0-1.0]
 
 #define alpha_out       1.0                  // MPDN requires the alpha channel output to be 1
 
@@ -123,17 +124,14 @@ vec4 hook() {
 #define w_offset        2.0                  // Edge channel offset, must be the same in all passes
 //-------------------------------------------------------------------------------------------------
 
-// Saturation loss reduction
-#define minim_satloss  ( (c[0].rgb*max((c0_Y + sharpdiff)/c0_Y, 0.0) + (c[0].rgb + sharpdiff))/2.0 )
-
-// Soft if, fast
-#define soft_if(a,b,c) ( saturate((a + b + c - 3.0*w_offset)/(saturate(maxedge) + 0.0067) - 0.85) )
+// Soft if, fast approx
+#define soft_if(a,b,c) ( saturate((a + b + c - 3.0*w_offset + 0.02)/(abs(maxedge) + 0.0001) - 0.85) )
 
 // Soft limit, modified tanh
 #define soft_lim(v,s)  ( ((exp(2.0*min(abs(v), s*16.0)/s) - 1.0)/(exp(2.0*min(abs(v), s*16.0)/s) + 1.0))*s )
 
 // Weighted power mean
-#define wpmean(a,b,c)  ( pow((c*pow(abs(a), pm_p) + (1.0-c)*pow(b, pm_p)), (1.0/pm_p)) )
+#define wpmean(a,b,w)  ( pow((w*pow(abs(a), pm_p) + abs(1.0-w)*pow(abs(b), pm_p)), (1.0/pm_p)) )
 
 // Get destination pixel values
 #define get(x,y)       ( HOOKED_texOff(vec2(x, y)*0.6) )
@@ -193,8 +191,7 @@ vec4 hook() {
               + soft_if(c[1].w,c[24].w,c[21].w)*soft_if(c[8].w,c[14].w,c[17].w)  // z dir
               + soft_if(c[3].w,c[23].w,c[18].w)*soft_if(c[6].w,c[20].w,c[15].w); // w dir
 
-    float s[2] = float[]( mix( L_compr_low, L_compr_high, saturate(smoothstep(2.0, 3.1, sbe)) ),
-                          mix( D_compr_low, D_compr_high, saturate(smoothstep(2.0, 3.1, sbe)) ) );
+    vec2 cs = mix( vec2(L_compr_low, D_compr_low), vec2(L_compr_high, D_compr_high), smoothstep(2.0, 3.1, sbe) );
 
     // RGB to luma
     float c0_Y = CtL(c[0]);
@@ -216,7 +213,8 @@ vec4 hook() {
                                  + 0.25*(abs(luma[0]-luma[1]) + abs(luma[0]-luma[3])
                                         +abs(luma[0]-luma[6]) + abs(luma[0]-luma[8])) );
 
-    // Use lower weights for pixels in a more active area relative to center pixel area.
+    // Use lower weights for pixels in a more active area relative to center pixel area
+    // This results in narrower and less visible overshoots around sharp edges
     float weights[12]  = float[](( min((mdiff_c0/mdiff(24, 21, 2,  4,  9,  10, 1)),  dW.y) ),
                                  ( dW.x ),
                                  ( min((mdiff_c0/mdiff(23, 18, 5,  2,  9,  11, 3)),  dW.y) ),
@@ -253,7 +251,7 @@ vec4 hook() {
     neg_laplace = abs(neg_laplace/weightsum);
 
     // Compute sharpening magnitude function
-    float sharpen_val = (curve_height/(curve_height*curveslope*pow(abs(c_edge), 3.5) + 0.5));
+    float sharpen_val = curve_height/(curve_height*curveslope*pow(abs(c_edge), 3.5) + 0.5);
 
     // Calculate sharpening diff and scale
     float sharpdiff = (c0_Y - neg_laplace)*(lowthrsum*sharpen_val*0.8 + 0.01);
@@ -319,19 +317,15 @@ vec4 hook() {
     float nmin = (min(luma[2]  + luma[1]*2.0,  c0_Y*3.0) + luma[0])/4.0;
 
     // Calculate tanh scale factor, pos/neg
-    float nmax_scale = min((abs(nmax - c0_Y) + L_overshoot), max_scale_lim);
-    float nmin_scale = min((abs(c0_Y - nmin) + D_overshoot), max_scale_lim);
+    float nmax_scale = min(nmax - c0_Y + min(L_overshoot, 1.0001 - nmax), max_scale_lim);
+    float nmin_scale = min(c0_Y - nmin + min(D_overshoot, 0.0001 + nmin), max_scale_lim);
 
-    // Soft limited antiringing with tanh, wpmean to control maximum compression slope
-    sharpdiff = wpmean(max(sharpdiff, 0.0), soft_lim(max(sharpdiff, 0.0), nmax_scale ), s[0] )
-              - wpmean(min(sharpdiff, 0.0), soft_lim(min(sharpdiff, 0.0), nmin_scale ), s[1] );
+    // Soft limited anti-ringing with tanh, wpmean to control compression slope
+    sharpdiff = wpmean(max(sharpdiff, 0.0), soft_lim( max(sharpdiff, 0.0), nmax_scale ), cs.x )
+              - wpmean(min(sharpdiff, 0.0), soft_lim( min(sharpdiff, 0.0), nmin_scale ), cs.y );
 
-    if (video_level_out){
-        return vec4(GammaInv(mix(orig.rgb + (minim_satloss - c[0].rgb), (orig.rgb + sharpdiff), step(sharpdiff, 0.0))), alpha_out);
-    }
+    float satmul = max(1.0 + sharpdiff*1.5, 1.0/(1.0 + abs(sharpdiff)*0.5));
+    vec3 res = c0_Y + sharpdiff + (c[0].rgb - c0_Y)*satmul;
 
-    else // Normal path
-    {
-        return vec4(GammaInv(mix(minim_satloss, (c[0].rgb + sharpdiff), step(sharpdiff, 0.0))), alpha_out);
-    }
+    return vec4( GammaInv(video_level_out == true ? orig.rgb + (res - c[0].rgb) : res), alpha_out );
 }

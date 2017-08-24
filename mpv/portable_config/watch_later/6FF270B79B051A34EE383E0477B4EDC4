@@ -1,0 +1,5 @@
+start=53.053000
+volume=64.000000
+fullscreen=yes
+deinterlace=no
+vf=@autodeint-detect:idet,@autodeint-dominance:setfield=mode=auto,@autodeint:lavfi-pullup,@autodeint-ivtc-detect:idet

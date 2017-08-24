@@ -1,0 +1,4 @@
+start=486.361000
+volume=60.000000
+fullscreen=yes
+af=@audnorm:loudnorm=I=-18:TP=%4%-1.5:LRA=1

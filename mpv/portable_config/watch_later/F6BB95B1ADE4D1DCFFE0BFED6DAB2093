@@ -1,0 +1,7 @@
+start=830.538000
+pause=yes
+volume=72.000000
+ontop=no
+af=@audnorm:loudnorm=I=-18:TP=%4%-1.5:LRA=1,@surround:!chl_out=%2%@0=6:lfe=disabled
+aid=1
+sid=1

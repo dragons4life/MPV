@@ -1,0 +1,4 @@
+start=3168.560000
+volume=82.000000
+af=@audnorm:loudnorm=I=-18:TP=%4%-1.5:LRA=1
+sid=no

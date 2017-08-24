@@ -1,0 +1,5 @@
+start=7421.164000
+volume=48.000000
+fullscreen=yes
+vf=@autocrop-crop:lavfi-crop=y=140:h=798:x=2:w=1774
+af=@audnorm:loudnorm=I=-18:TP=%4%-1.5:LRA=1

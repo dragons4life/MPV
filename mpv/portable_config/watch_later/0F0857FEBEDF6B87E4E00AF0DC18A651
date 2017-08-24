@@ -1,0 +1,5 @@
+start=8111.395000
+volume=74.000000
+vf=@autocrop-crop:lavfi-crop=y=140:h=800:x=2:w=1918
+af=@audnorm:loudnorm=I=-18:TP=%4%-1.5:LRA=1
+sid=1
